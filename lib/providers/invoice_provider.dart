@@ -1,5 +1,6 @@
 // lib/providers/invoice_provider.dart
 import 'package:flutter/material.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:fouad_stock/enum/filter_enums.dart';
 import 'package:fouad_stock/model/invoice_item_model.dart' as db_invoice_item;
 import 'package:fouad_stock/model/invoice_model.dart';
@@ -50,6 +51,10 @@ class InvoiceProvider with ChangeNotifier {
           break;
         case InvoiceListFilter.unpaidSales:
           _allFetchedInvoices = await DatabaseHelper.instance.getUnpaidSalesInvoices();
+          break;
+        // --- MODIFIED: Added case for the new filter ---
+        case InvoiceListFilter.unpaidPurchases:
+          _allFetchedInvoices = await DatabaseHelper.instance.getUnpaidPurchasesInvoices();
           break;
         case InvoiceListFilter.none:
         default:
@@ -143,18 +148,17 @@ class InvoiceProvider with ChangeNotifier {
         return invoiceId;
       });
 
-      // --- OPTIMIZED REFRESH LOGIC ---
       final newCompleteInvoice = await DatabaseHelper.instance.getInvoiceById(newInvoiceId);
       if(newCompleteInvoice != null) {
         _allFetchedInvoices.insert(0, newCompleteInvoice);
-        searchInvoices(_searchQuery); // This updates the UI list and notifies listeners
+        searchInvoices(_searchQuery);
       } else {
-        await fetchInvoices(filter: _currentFilter); // Fallback
+        await fetchInvoices(filter: _currentFilter);
       }
       await productProvider.fetchProducts();
 
       _setLoading(false);
-      return null; // Success
+      return null;
     } catch (e) {
       _errorMessage = "حدث خطأ أثناء إنشاء الفاتورة: ${e.toString().replaceFirst("Exception: ", "")}";
       print("[InvoiceProvider] Error creating sale invoice (transaction rolled back): $_errorMessage");
@@ -188,7 +192,6 @@ class InvoiceProvider with ChangeNotifier {
         return invoiceId;
       });
       
-      // --- OPTIMIZED REFRESH LOGIC ---
       final newCompleteInvoice = await DatabaseHelper.instance.getInvoiceById(newInvoiceId);
       if(newCompleteInvoice != null) {
         _allFetchedInvoices.insert(0, newCompleteInvoice);
@@ -227,7 +230,6 @@ class InvoiceProvider with ChangeNotifier {
         await DatabaseHelper.instance.deleteInvoiceAndItems(invoice.id!, txn: txn);
       });
       
-      // --- OPTIMIZED REFRESH LOGIC ---
       _allFetchedInvoices.removeWhere((inv) => inv.id == invoice.id);
       searchInvoices(_searchQuery); 
       
@@ -309,7 +311,6 @@ class InvoiceProvider with ChangeNotifier {
         await DatabaseHelper.instance.updateInvoiceRecord(updatedInvoiceData, txn: txn);
       });
 
-      // --- OPTIMIZED REFRESH LOGIC ---
       final updatedCompleteInvoice = await DatabaseHelper.instance.getInvoiceById(originalInvoice.id!);
       if (updatedCompleteInvoice != null) {
         final index = _allFetchedInvoices.indexWhere((inv) => inv.id == originalInvoice.id);
@@ -396,6 +397,15 @@ class InvoiceProvider with ChangeNotifier {
     } catch (e) { print("[InvProv] Error getTotalUnpaidSalesAmount: $e"); return 0.0; }
   }
 
+  // --- NEW: Method to calculate total unpaid purchases ---
+  Future<double> getTotalUnpaidPurchasesAmount() async {
+    try {
+      List<Invoice> unpaid = await DatabaseHelper.instance.getUnpaidPurchasesInvoices();
+      double totalDue = unpaid.fold(0.0, (sum, inv) => sum + inv.balanceDue);
+      return totalDue;
+    } catch (e) { print("[InvProv] Error getTotalUnpaidPurchasesAmount: $e"); return 0.0; }
+  }
+
   Future<List<Invoice>> getSalesInvoicesByDateRange(DateTime startDate, DateTime endDate) async {
     bool originalLoadingState = _isLoading;
     if (!_isLoading) _setLoading(true); else if (!originalLoadingState && _isLoading) notifyListeners();
@@ -410,14 +420,5 @@ class InvoiceProvider with ChangeNotifier {
     }
     if (!originalLoadingState) _setLoading(false); else if (_errorMessage != null) notifyListeners();
     return salesInvoices;
-  }
-
-  Future<Map<String, dynamic>> getSalesSummaryByDateRange(DateTime startDate, DateTime endDate) async {
-    try {
-      List<Invoice> salesInRange = await getSalesInvoicesByDateRange(startDate, endDate);
-      double totalAmount = salesInRange.fold(0.0, (sum, inv) => sum + inv.grandTotal);
-      int count = salesInRange.length;
-      return {'total': totalAmount, 'count': count};
-    } catch (e) { print("[InvProv] Error getSalesSummaryByDateRange: $e"); return {'total': 0.0, 'count': 0}; }
   }
 }

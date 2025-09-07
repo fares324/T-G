@@ -13,4 +13,5 @@ enum InvoiceListFilter {
   todaySales,
   todayPurchases,
   unpaidSales,
+  unpaidPurchases, // --- NEW FILTER ADDED ---
 }

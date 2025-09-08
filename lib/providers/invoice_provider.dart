@@ -1,6 +1,5 @@
 // lib/providers/invoice_provider.dart
 import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:fouad_stock/enum/filter_enums.dart';
 import 'package:fouad_stock/model/invoice_item_model.dart' as db_invoice_item;
 import 'package:fouad_stock/model/invoice_model.dart';

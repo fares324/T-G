@@ -7,8 +7,8 @@ import '../helpers/db_helpers.dart';
 
 class ProductProvider with ChangeNotifier {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
-  List<Product> _allProducts = []; // Master list of all products with variants
-  List<Product> _displayProducts = []; // Filtered/searched list for the UI
+  List<Product> _allProducts = []; // Master list
+  List<Product> _displayProducts = []; // List for the UI
 
   String _searchQuery = '';
   ProductListFilter _currentFilter = ProductListFilter.none;
@@ -18,7 +18,6 @@ class ProductProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   ProductListFilter get currentFilter => _currentFilter;
 
-  // --- NEW: Dynamic category getter ---
   List<String> get categories {
     if (_allProducts.isEmpty) return [];
     final allCategories = _allProducts.map((p) => p.category).toSet();
@@ -29,11 +28,11 @@ class ProductProvider with ChangeNotifier {
     fetchProducts();
   }
 
-  // --- REWRITTEN: Main data fetching logic ---
+  // --- REWRITTEN & SIMPLIFIED ---
   Future<void> fetchProducts({ProductListFilter? filter}) async {
     _isLoading = true;
     _currentFilter = filter ?? _currentFilter;
-    notifyListeners();
+    // Don't notify here, finally block will handle it.
 
     try {
       _allProducts = await _dbHelper.getAllProductsWithVariants();
@@ -44,47 +43,113 @@ class ProductProvider with ChangeNotifier {
       _displayProducts = [];
     } finally {
       _isLoading = false;
-      notifyListeners();
+      notifyListeners(); // Guaranteed notification
     }
   }
-  
-  // --- NEW: Combined filter and search logic ---
-  void _applyFiltersAndSearch() {
-      // 1. Apply the primary filter (low stock, expired, etc.)
-      List<Product> filteredList;
-      switch (_currentFilter) {
-          case ProductListFilter.lowStock:
-              filteredList = _allProducts.where((p) => p.isLowStock).toList();
-              break;
-          case ProductListFilter.outOfStock:
-              filteredList = _allProducts.where((p) => p.isOutOfStock).toList();
-              break;
-          case ProductListFilter.expired:
-              filteredList = _allProducts.where((p) => p.isExpired).toList();
-              break;
-          case ProductListFilter.nearingExpiry:
-              filteredList = _allProducts.where((p) => p.isNearingExpiry).toList();
-              break;
-          case ProductListFilter.none:
-          default:
-              filteredList = List.from(_allProducts);
-      }
 
-      // 2. Apply the text search query on the already filtered list
-      if (_searchQuery.isEmpty) {
-          _displayProducts = filteredList;
-      } else {
-          String lowerCaseQuery = _searchQuery.toLowerCase();
-          _displayProducts = filteredList.where((product) {
-              return product.name.toLowerCase().contains(lowerCaseQuery) ||
-                     (product.productCode?.toLowerCase().contains(lowerCaseQuery) ?? false) ||
-                     product.category.toLowerCase().contains(lowerCaseQuery) ||
-                     product.variants.any((v) => v.barcode?.toLowerCase().contains(lowerCaseQuery) ?? false);
-          }).toList();
-      }
+  // --- REWRITTEN & SIMPLIFIED ---
+  Future<void> addProduct(Product product) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      final Product productToInsert = product.copyWith(
+        addedDate: DateTime.now(),
+        lastUpdated: DateTime.now(),
+      );
+      await _dbHelper.insertProductWithVariants(productToInsert, product.variants);
+      
+      // After adding, refresh the master list
+      _allProducts = await _dbHelper.getAllProductsWithVariants();
+      _applyFiltersAndSearch(); // Re-apply current view settings
+
+    } catch (e) {
+      print("[ProductProvider] Error adding product: $e");
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners(); // Guaranteed notification
+    }
   }
 
-  // --- NEW: Public search method ---
+  // --- REWRITTEN & SIMPLIFIED ---
+  Future<void> updateProduct(Product product) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+      
+      final Product productToUpdate = product.copyWith(
+        lastUpdated: DateTime.now(),
+      );
+      await _dbHelper.updateProductWithVariants(productToUpdate, product.variants);
+
+      // After updating, refresh the master list
+      _allProducts = await _dbHelper.getAllProductsWithVariants();
+      _applyFiltersAndSearch(); // Re-apply current view settings
+
+    } catch (e) {
+      print("[ProductProvider] Error updating product: $e");
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners(); // Guaranteed notification
+    }
+  }
+
+  // --- REWRITTEN & SIMPLIFIED ---
+  Future<void> deleteProduct(int id) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+      
+      await _dbHelper.deleteProduct(id);
+
+      // After deleting, refresh the master list
+      _allProducts = await _dbHelper.getAllProductsWithVariants();
+      _applyFiltersAndSearch(); // Re-apply current view settings
+
+    } catch (e) {
+      print("[ProductProvider] Error deleting product ID $id: $e");
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners(); // Guaranteed notification
+    }
+  }
+
+  void _applyFiltersAndSearch() {
+    List<Product> filteredList;
+    switch (_currentFilter) {
+      case ProductListFilter.lowStock:
+        filteredList = _allProducts.where((p) => p.isLowStock).toList();
+        break;
+      case ProductListFilter.outOfStock:
+        filteredList = _allProducts.where((p) => p.isOutOfStock).toList();
+        break;
+      case ProductListFilter.expired:
+        filteredList = _allProducts.where((p) => p.isExpired).toList();
+        break;
+      case ProductListFilter.nearingExpiry:
+        filteredList = _allProducts.where((p) => p.isNearingExpiry).toList();
+        break;
+      case ProductListFilter.none:
+      default:
+        filteredList = List.from(_allProducts);
+    }
+
+    if (_searchQuery.isEmpty) {
+      _displayProducts = filteredList;
+    } else {
+      String lowerCaseQuery = _searchQuery.toLowerCase();
+      _displayProducts = filteredList.where((product) {
+        return product.name.toLowerCase().contains(lowerCaseQuery) ||
+            (product.productCode?.toLowerCase().contains(lowerCaseQuery) ?? false) ||
+            product.category.toLowerCase().contains(lowerCaseQuery) ||
+            product.variants.any((v) => v.barcode?.toLowerCase().contains(lowerCaseQuery) ?? false);
+      }).toList();
+    }
+  }
+
   void searchProducts(String query, {ProductListFilter? filter}) {
     _searchQuery = query.trim();
     _currentFilter = filter ?? _currentFilter;
@@ -92,56 +157,6 @@ class ProductProvider with ChangeNotifier {
     notifyListeners();
   }
 
-
-  Future<void> addProduct(Product product) async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      final Product productToInsert = product.copyWith(
-        addedDate: DateTime.now(),
-        lastUpdated: DateTime.now(),
-      );
-      await _dbHelper.insertProductWithVariants(productToInsert, product.variants);
-      await fetchProducts(filter: _currentFilter);
-    } catch (e) {
-      print("[ProductProvider] Error adding product: $e");
-      _isLoading = false;
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  Future<void> updateProduct(Product product) async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      final Product productToUpdate = product.copyWith(
-        lastUpdated: DateTime.now(),
-      );
-      await _dbHelper.updateProductWithVariants(productToUpdate, product.variants);
-      await fetchProducts(filter: _currentFilter);
-    } catch (e) {
-      print("[ProductProvider] Error updating product: $e");
-      _isLoading = false;
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  Future<void> deleteProduct(int id) async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      await _dbHelper.deleteProduct(id);
-      await fetchProducts(filter: _currentFilter);
-    } catch (e) {
-      print("[ProductProvider] Error deleting product ID $id: $e");
-      _isLoading = false;
-      notifyListeners();
-      rethrow;
-    }
-  }
-  
   Map<String, dynamic>? findProductAndVariantByVariantId(int variantId) {
     for (var product in _allProducts) {
       for (var variant in product.variants) {
@@ -152,56 +167,22 @@ class ProductProvider with ChangeNotifier {
     }
     return null;
   }
-  
-  Future<String?> recordUsage(
-    int variantId,
-    int quantityChange, {
-    bool refreshList = true,
-    Transaction? txn,
-  }) async {
-    try {
-        if(txn != null){
-           await _dbHelper.updateVariantQuantity(variantId, -quantityChange, txn: txn);
-        } else {
-          final db = await _dbHelper.database;
-          await db.transaction((txn) async {
-            await _dbHelper.updateVariantQuantity(variantId, -quantityChange, txn: txn);
-          });
-        }
-        
-        if (refreshList) {
-          await fetchProducts(filter: _currentFilter);
-        }
-        return null; // Success
-    } catch (e) {
-        print("[ProductProvider] Error in recordUsage for variant ID $variantId: $e");
-        return 'حدث خطأ أثناء تسجيل الصرف: ${e.toString()}';
-    }
-  }
 
-  Future<String?> increaseStock(
-    int variantId,
-    int quantityChange, {
-    bool refreshList = true,
-    Transaction? txn,
-  }) async {
+  Future<String?> recordUsage(int variantId, int quantityChange, {bool refreshList = true, Transaction? txn}) async {
+    // This logic can be simplified as well, but let's fix the main issue first.
+    // For now, it calls fetchProducts which will work with the rewritten version.
     try {
-        if(txn != null){
-           await _dbHelper.updateVariantQuantity(variantId, quantityChange, txn: txn);
-        } else {
-          final db = await _dbHelper.database;
-          await db.transaction((txn) async {
-            await _dbHelper.updateVariantQuantity(variantId, quantityChange, txn: txn);
-          });
-        }
-
-        if (refreshList) {
-            await fetchProducts(filter: _currentFilter);
-        }
-        return null; // Success
+      final db = await _dbHelper.database;
+      await db.transaction((txn) async {
+        await _dbHelper.updateVariantQuantity(variantId, -quantityChange, txn: txn);
+      });
+      if (refreshList) {
+        await fetchProducts(filter: _currentFilter);
+      }
+      return null;
     } catch (e) {
-        print("[ProductProvider] Error in increaseStock for variant ID $variantId: $e");
-        return 'حدث خطأ أثناء زيادة المخزون: ${e.toString()}';
+      print("[ProductProvider] Error in recordUsage for variant ID $variantId: $e");
+      return 'حدث خطأ أثناء تسجيل الصرف: ${e.toString()}';
     }
   }
 
@@ -212,7 +193,6 @@ class ProductProvider with ChangeNotifier {
   int get expiredProductsCount => _allProducts.where((p) => p.isExpired).length;
   int get nearingExpiryProductsCount => _allProducts.where((p) => p.isNearingExpiry).length;
 }
-
 
 
 

@@ -73,10 +73,15 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
     super.dispose();
   }
 
-  void _navigateToAddEditProductScreen(BuildContext context, {Product? product}) {
-    Navigator.of(context).push(
+  // <-- CHANGED: This function now waits for a result and refreshes the list
+  void _navigateToAddEditProductScreen(BuildContext context, {Product? product}) async {
+    final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (ctx) => AddEditProductScreen(product: product)),
-    ).then((_) { _refreshProducts(); });
+    );
+
+    if (result == true && mounted) {
+      _refreshProducts();
+    }
   }
 
   Future<void> _confirmDelete(BuildContext context, Product product) async {
@@ -318,7 +323,6 @@ class ProductParentCard extends StatelessWidget {
     );
   }
 }
-
 
 
 

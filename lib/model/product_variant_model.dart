@@ -1,5 +1,7 @@
 // lib/models/product_variant_model.dart
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
+import 'package:flutter/material.dart';
+
 
 class ProductVariant {
   int? id;
@@ -24,47 +26,52 @@ class ProductVariant {
     this.expiryDate,
   });
 
-  // Helper to get a display-friendly name from attributes
   String get displayName {
-    if (attributes.isEmpty) return '';
-    return attributes.values.join(' / ');
+    if (attributes.isEmpty) return 'افتراضي';
+    var sortedKeys = attributes.keys.toList()..sort();
+    return sortedKeys.map((key) => attributes[key]!).join(' / ');
   }
-
-  // Helper to check if the variant has any attributes
-  bool get hasAttributes => attributes.isNotEmpty;
-
-  // Static helper to generate a display name from a map
+  
   static String generateDisplayName(Map<String, String> attributes) {
-    if (attributes.isEmpty) return '';
-    return attributes.values.join(' / ');
+   if (attributes.isEmpty) return 'افتراضي';
+    var sortedKeys = attributes.keys.toList()..sort();
+    return sortedKeys.map((key) => attributes[key]!).join(' / ');
   }
+
+  bool get hasAttributes => attributes.isNotEmpty;
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'productId': productId,
-      'name': attributes.keys.isNotEmpty ? attributes.keys.first : '', // Storing first option name
-      'value': attributes.values.isNotEmpty ? attributes.values.first : '', // Storing first option value
+      'attributes': jsonEncode(attributes),
       'purchasePrice': purchasePrice,
       'sellingPrice': sellingPrice,
       'quantity': quantity,
       'sku': sku,
       'barcode': barcode,
+      // Note: expiryDate is not saved in this map, add if needed
     };
   }
 
+  // <-- CHANGED: This function is now safer and handles null values
   factory ProductVariant.fromMap(Map<String, dynamic> map) {
+    Map<String, String> attributesMap = {};
+    // Check if 'attributes' from the DB is a valid String before decoding
+    if (map['attributes'] is String) {
+      attributesMap = Map<String, String>.from(jsonDecode(map['attributes']));
+    }
+
     return ProductVariant(
       id: map['id'] as int?,
       productId: map['productId'] as int,
-      attributes: {
-        (map['name'] as String): (map['value'] as String)
-      }, // Reconstruct attributes from name/value
+      attributes: attributesMap, // Use the safe map
       purchasePrice: map['purchasePrice'] as double,
       sellingPrice: map['sellingPrice'] as double,
       quantity: map['quantity'] as int,
       sku: map['sku'] as String?,
       barcode: map['barcode'] as String?,
+      // Note: expiryDate is not loaded from map, add if needed
     );
   }
 
@@ -75,9 +82,10 @@ class ProductVariant {
     double? purchasePrice,
     double? sellingPrice,
     int? quantity,
-    String? sku,
-    String? barcode,
-    DateTime? expiryDate,
+    // Allow null values to be passed to unset optional fields
+    ValueGetter<String?>? sku,
+    ValueGetter<String?>? barcode,
+    ValueGetter<DateTime?>? expiryDate,
   }) {
     return ProductVariant(
       id: id ?? this.id,
@@ -86,23 +94,12 @@ class ProductVariant {
       purchasePrice: purchasePrice ?? this.purchasePrice,
       sellingPrice: sellingPrice ?? this.sellingPrice,
       quantity: quantity ?? this.quantity,
-      sku: sku ?? this.sku,
-      barcode: barcode ?? this.barcode,
-      expiryDate: expiryDate ?? this.expiryDate,
+      sku: sku != null ? sku() : this.sku,
+      barcode: barcode != null ? barcode() : this.barcode,
+      expiryDate: expiryDate != null ? expiryDate() : this.expiryDate,
     );
   }
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-  
-    return other is ProductVariant &&
-      other.id == id &&
-      other.productId == productId &&
-      mapEquals(other.attributes, attributes);
-  }
-
-  @override
-  int get hashCode => id.hashCode ^ productId.hashCode ^ attributes.hashCode;
 }
+
+
 

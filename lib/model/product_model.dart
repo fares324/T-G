@@ -1,5 +1,6 @@
 // lib/models/product_model.dart
 import 'package:fouad_stock/model/product_variant_model.dart';
+import 'package:flutter/foundation.dart';
 
 class Product {
   int? id;
@@ -27,7 +28,7 @@ class Product {
     this.variants = const [],
   });
   
-  bool get hasVariants => variants.length > 1 || (variants.isNotEmpty && variants.first.displayName.isNotEmpty);
+  bool get hasVariants => variants.length > 1 || (variants.isNotEmpty && variants.first.hasAttributes);
 
   int get totalQuantity {
     if (variants.isEmpty) return 0;
@@ -55,7 +56,6 @@ class Product {
     return '${minPrice.toStringAsFixed(2)} - ${maxPrice.toStringAsFixed(2)}';
   }
 
-  // --- Status Getters based on variants ---
   bool get isOutOfStock => totalQuantity <= 0;
   bool get isLowStock => !isOutOfStock && lowStockThreshold != null && totalQuantity <= lowStockThreshold!;
 
@@ -75,7 +75,6 @@ class Product {
     if (earliest == null) return false;
     return earliest.isBefore(DateTime.now().add(const Duration(days: 30))) && !isExpired;
   }
-
 
   Map<String, dynamic> toMap() {
     return {
@@ -102,7 +101,7 @@ class Product {
       lowStockThreshold: map['lowStockThreshold'] as int?,
       addedDate: map['addedDate'] == null ? null : DateTime.parse(map['addedDate'] as String),
       lastUpdated: map['lastUpdated'] == null ? null : DateTime.parse(map['lastUpdated'] as String),
-      variants: [], // Variants should be loaded separately
+      variants: [],
     );
   }
 
@@ -132,4 +131,9 @@ class Product {
     );
   }
 }
+
+
+
+
+
 

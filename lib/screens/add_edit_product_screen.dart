@@ -37,11 +37,11 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
   late TextEditingController _nameController;
   late TextEditingController _categoryController;
   late TextEditingController _unitOfMeasureController;
+  late TextEditingController _lowStockThresholdController;
   
   // State for managing variants
   final List<_OptionController> _optionControllers = [];
   List<ProductVariant> _variants = [];
-  // --- FIX: Use index as key for stability ---
   final Map<int, TextEditingController> _variantQtyControllers = {};
   final Map<int, TextEditingController> _variantSellingPriceControllers = {};
   final Map<int, TextEditingController> _variantPurchasePriceControllers = {};
@@ -55,6 +55,8 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
     _nameController = TextEditingController(text: widget.product?.name ?? '');
     _categoryController = TextEditingController(text: widget.product?.category ?? '');
     _unitOfMeasureController = TextEditingController(text: widget.product?.unitOfMeasure ?? 'قطعة');
+    _lowStockThresholdController = TextEditingController(text: widget.product?.lowStockThreshold?.toString() ?? '');
+
 
     if (widget.product != null) {
       _variants = List<ProductVariant>.from(widget.product!.variants.map((v) => v.copyWith()));
@@ -88,13 +90,13 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
   }
   
   void _initializeVariantControllers() {
-     _disposeVariantControllers();
-     for (int i = 0; i < _variants.length; i++) {
-      var variant = _variants[i];
-      _variantQtyControllers[i] = TextEditingController(text: variant.quantity.toString());
-      _variantSellingPriceControllers[i] = TextEditingController(text: variant.sellingPrice.toStringAsFixed(2));
-      _variantPurchasePriceControllers[i] = TextEditingController(text: variant.purchasePrice.toStringAsFixed(2));
-      _variantSkuControllers[i] = TextEditingController(text: variant.sku ?? '');
+   _disposeVariantControllers();
+   for (int i = 0; i < _variants.length; i++) {
+     var variant = _variants[i];
+     _variantQtyControllers[i] = TextEditingController(text: variant.quantity.toString());
+     _variantSellingPriceControllers[i] = TextEditingController(text: variant.sellingPrice.toStringAsFixed(2));
+     _variantPurchasePriceControllers[i] = TextEditingController(text: variant.purchasePrice.toStringAsFixed(2));
+     _variantSkuControllers[i] = TextEditingController(text: variant.sku ?? '');
     }
   }
   
@@ -115,6 +117,7 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
     _nameController.dispose();
     _categoryController.dispose();
     _unitOfMeasureController.dispose();
+    _lowStockThresholdController.dispose();
     for (var controller in _optionControllers) {
       controller.dispose();
     }
@@ -154,12 +157,12 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
 
     if (_optionControllers.every((c) => c.nameController.text.trim().isEmpty || c.valuesController.text.trim().isEmpty)) {
       setState(() {
-         if(_variants.isEmpty){
+          if(_variants.isEmpty){
             _variants.add(ProductVariant(productId: widget.product?.id ?? 0, attributes: {}, purchasePrice: 0, sellingPrice: 0, quantity: 0));
-         } else {
+          } else {
             final firstVariant = _variants.first;
             _variants = [firstVariant.copyWith(attributes: {})];
-         }
+          }
       });
       _initializeVariantControllers();
       return;
@@ -188,12 +191,12 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
       
       _variants = allCombinations.map((attributes) {
           final existing = oldVariants.firstWhere(
-             (v) => mapEquals(v.attributes, attributes),
-             orElse: () => ProductVariant(
+              (v) => mapEquals(v.attributes, attributes),
+              orElse: () => ProductVariant(
                   productId: widget.product?.id ?? 0, 
                   attributes: attributes,
                   purchasePrice: 0, sellingPrice: 0, quantity: 0
-             ),
+              ),
           );
           return existing.copyWith(attributes: attributes);
       }).toList();
@@ -209,7 +212,7 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
     _updateVariantsFromControllers();
 
     if (_variants.isEmpty) {
-       _variants.add(ProductVariant(productId: 0, attributes: {}, purchasePrice: 0, sellingPrice: 0, quantity: 0));
+      _variants.add(ProductVariant(productId: 0, attributes: {}, purchasePrice: 0, sellingPrice: 0, quantity: 0));
     }
 
     setState(() { _isSaving = true; });
@@ -221,6 +224,7 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
       name: _nameController.text.trim(),
       category: _categoryController.text.trim(),
       unitOfMeasure: _unitOfMeasureController.text.trim(),
+      lowStockThreshold: int.tryParse(_lowStockThresholdController.text.trim()),
       addedDate: widget.product?.addedDate ?? DateTime.now(),
       lastUpdated: DateTime.now(),
       variants: _variants,
@@ -229,12 +233,12 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
     try {
       if (widget.product == null) {
         await productProvider.addProduct(parentProduct);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تمت إضافة المنتج بنجاح!'), backgroundColor: Colors.green));
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تمت إضافة المنتج بنجاح!'), backgroundColor: Colors.green));
       } else {
         await productProvider.updateProduct(parentProduct);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تحديث المنتج بنجاح!'), backgroundColor: Colors.green));
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تحديث المنتج بنجاح!'), backgroundColor: Colors.green));
       }
-      if(mounted) Navigator.of(context).pop();
+      if(mounted) Navigator.of(context).pop(true); // <-- CHANGED
     } catch (e) {
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل حفظ المنتج: $e'), backgroundColor: Colors.red));
     } finally {
@@ -280,6 +284,13 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
               decoration: const InputDecoration(labelText: 'وحدة القياس*'),
               textAlign: TextAlign.right,
               validator: (value) => (value == null || value.trim().isEmpty) ? 'الوحدة مطلوبة' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _lowStockThresholdController,
+              decoration: const InputDecoration(labelText: 'حد إعادة الطلب (اختياري)', hintText: 'مثال: 10'),
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.right,
             ),
             
             const Divider(height: 40),
@@ -404,7 +415,7 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
               validator: (v) => (v == null || v.isEmpty) ? 'مطلوب' : null,
             ),
             const SizedBox(height: 12),
-             TextFormField(
+              TextFormField(
               controller: _variantSellingPriceControllers[0],
               decoration: const InputDecoration(labelText: 'سعر البيع*'),
               keyboardType: TextInputType.number,
@@ -419,7 +430,7 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
               textAlign: TextAlign.right,
               validator: (v) => (v == null || v.isEmpty) ? 'مطلوب' : null,
             ),
-             const SizedBox(height: 12),
+              const SizedBox(height: 12),
             TextFormField(
               controller: _variantSkuControllers[0],
               decoration: const InputDecoration(labelText: 'SKU (اختياري)'),

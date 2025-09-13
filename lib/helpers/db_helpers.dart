@@ -12,7 +12,7 @@ import 'package:intl/intl.dart';
 
 class DatabaseHelper {
   static const _databaseName = "MedicalStore.db";
-  static const _databaseVersion = 8; 
+  static const _databaseVersion = 9; // <-- CHANGED
 
   // --- Product Table (Parent) ---
   static const tableProducts = 'products';
@@ -31,6 +31,7 @@ class DatabaseHelper {
   static const tableProductVariants = 'product_variants';
   static const columnVariantId = 'id';
   static const columnVariantProductId = 'productId';
+  static const columnVariantAttributes = 'attributes'; // <-- ADDED
   static const columnVariantName = 'name';
   static const columnVariantValue = 'value';
   static const columnVariantPurchasePrice = 'purchasePrice';
@@ -78,8 +79,8 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDatabase() async {
-    Directory directory = Platform.isWindows || Platform.isLinux || Platform.isMacOS 
-        ? await getApplicationSupportDirectory() 
+    Directory directory = Platform.isWindows || Platform.isLinux || Platform.isMacOS
+        ? await getApplicationSupportDirectory()
         : await getApplicationDocumentsDirectory();
     String path = join(directory.path, _databaseName);
     
@@ -116,6 +117,7 @@ class DatabaseHelper {
       CREATE TABLE $tableProductVariants (
         $columnVariantId INTEGER PRIMARY KEY AUTOINCREMENT,
         $columnVariantProductId INTEGER NOT NULL,
+        $columnVariantAttributes TEXT,             -- <-- ADDED
         $columnVariantName TEXT,
         $columnVariantValue TEXT,
         $columnVariantPurchasePrice REAL NOT NULL,
@@ -150,15 +152,12 @@ class DatabaseHelper {
       )''');
   }
 
+  // <-- REPLACED the old onUpgrade method with this safer version
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 8) {
-       // --- THIS IS THE FIX ---
-       // We must drop ALL old tables before calling _onCreate again.
-       await db.execute("DROP TABLE IF EXISTS $tableProductVariants");
-       await db.execute("DROP TABLE IF EXISTS $tableProducts");
-       await db.execute("DROP TABLE IF EXISTS $tableInvoiceItems");
-       await db.execute("DROP TABLE IF EXISTS $tableInvoices");
-       await _onCreate(db, newVersion);
+    if (oldVersion < 9) {
+      await db.execute('''
+        ALTER TABLE $tableProductVariants ADD COLUMN $columnVariantAttributes TEXT
+      ''');
     }
   }
 
@@ -183,9 +182,9 @@ class DatabaseHelper {
       await txn.update(tableProducts, product.toMap(), where: '$columnId = ?', whereArgs: [product.id]);
       await txn.delete(tableProductVariants, where: '$columnVariantProductId = ?', whereArgs: [product.id]);
       for (var variant in product.variants) {
-         final variantMap = variant.toMap();
-         variantMap['productId'] = product.id;
-         await txn.insert(tableProductVariants, variantMap);
+          final variantMap = variant.toMap();
+          variantMap['productId'] = product.id;
+          await txn.insert(tableProductVariants, variantMap);
       }
       return product.id!;
     });
@@ -367,7 +366,6 @@ class DatabaseHelper {
       print("[DatabaseHelper] Database instance closed.");
     }
   }
-
 }
 
 

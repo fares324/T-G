@@ -11,7 +11,7 @@ import '../providers/product_provider.dart';
 
 class InvoiceDetailsScreen extends StatefulWidget {
   final int invoiceId;
-  final Invoice initialInvoice; // Pass initial invoice to show while provider updates
+  final Invoice initialInvoice;
 
   const InvoiceDetailsScreen({
     super.key,
@@ -25,12 +25,51 @@ class InvoiceDetailsScreen extends StatefulWidget {
 
 class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
   late DateFormat _arabicDateFormat;
-  
+  late Invoice _invoice;
+  bool _isLoadingDetails = false;
+
   @override
   void initState() {
     super.initState();
     _arabicDateFormat = DateFormat.yMMMd('ar');
+    _invoice = widget.initialInvoice;
+    // --- FIX: Defer the initial data load to ensure it runs after the first frame ---
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+       if(mounted) _refreshInvoiceDetails();
+    });
   }
+  
+  // --- NEW: Method to reload the invoice details from the provider ---
+  Future<void> _refreshInvoiceDetails() async {
+    if(!mounted) return;
+    setState(() {
+      _isLoadingDetails = true;
+    });
+    
+    final invoiceProvider = Provider.of<InvoiceProvider>(context, listen: false);
+    // Directly fetch the single invoice we need, which is more efficient
+    final updatedInvoice = await invoiceProvider.getInvoiceById(widget.invoiceId);
+
+    // If the invoice was deleted from another screen, it might be null.
+    // In that case, we can safely pop the screen.
+    if (updatedInvoice == null && mounted) {
+        Navigator.of(context).pop();
+        return;
+    }
+
+    if (updatedInvoice != null && mounted) {
+      setState(() {
+        _invoice = updatedInvoice;
+      });
+    }
+    
+    if(mounted){
+      setState(() {
+        _isLoadingDetails = false;
+      });
+    }
+  }
+
 
   Future<void> _recordPaymentDialog(Invoice invoice) async {
     if (!mounted) return;
@@ -98,6 +137,7 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('تم تسجيل الدفعة بنجاح!', textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo')), backgroundColor: Colors.green),
                     );
+                    _refreshInvoiceDetails();
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('فشل تسجيل الدفعة: $error', textAlign: TextAlign.right, style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: Colors.red),
@@ -199,183 +239,161 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<InvoiceProvider>(
-      builder: (context, invoiceProvider, child) {
-        
-        final invoice = invoiceProvider.invoices.firstWhere(
-          (inv) => inv.id == widget.invoiceId,
-          orElse: () => widget.initialInvoice, // Use initial invoice as a fallback
-        );
-        
-        if (invoiceProvider.isLoading && invoiceProvider.invoices.indexWhere((inv) => inv.id == widget.invoiceId) == -1) {
-          return Scaffold(
-            appBar: AppBar(title: const Text('جاري التحميل...')),
-            body: const Center(child: CircularProgressIndicator()),
-          );
-        }
-        
-        // This handles the case where the invoice was deleted and is no longer in the provider list
-        bool invoiceExists = invoiceProvider.invoices.any((inv) => inv.id == widget.invoiceId);
-        if(!invoiceExists && !invoiceProvider.isLoading) {
-            // This can be shown briefly if deletion pop happens before this screen is fully gone
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && Navigator.canPop(context)) {
-                 Navigator.of(context).pop();
-              }
-            });
-            return Scaffold(appBar: AppBar(), body: const Center(child: Text("تم حذف الفاتورة.")));
-        }
+      final theme = Theme.of(context);
+      Color currentPaymentStatusColor = paymentStatusColor(_invoice.paymentStatus, theme);
 
-        final theme = Theme.of(context);
-        Color currentPaymentStatusColor = paymentStatusColor(invoice.paymentStatus, theme);
-
-        return Scaffold(
-          appBar: AppBar(
-            title: Text('تفاصيل الفاتورة رقم: ${invoice.invoiceNumber}', style: const TextStyle(fontFamily: 'Cairo')),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                tooltip: 'تعديل الفاتورة',
-                onPressed: () {
-                  if (invoice.paymentStatus == PaymentStatus.paid) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('لا يمكن تعديل فاتورة مدفوعة بالكامل.', textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo'))),
-                    );
-                    return;
-                  }
-                  
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => EditInvoiceScreen(originalInvoice: invoice),
-                    ),
-                  );
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.picture_as_pdf_outlined),
-                tooltip: 'تصدير كـ PDF',
-                onPressed: () async {
-                  final pdfService = PdfInvoiceService();
-                  if (!mounted) return;
+      return Scaffold(
+        appBar: AppBar(
+          title: Text('تفاصيل الفاتورة رقم: ${_invoice.invoiceNumber}', style: const TextStyle(fontFamily: 'Cairo')),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'تعديل الفاتورة',
+              // --- THIS IS THE FIX ---
+              onPressed: () async {
+                if (_invoice.paymentStatus == PaymentStatus.paid) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('جاري إنشاء ملف PDF...', textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo'))),
+                    const SnackBar(content: Text('لا يمكن تعديل فاتورة مدفوعة بالكامل.', textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo'))),
                   );
-                  await pdfService.shareInvoice(invoice, context);
-                },
-              ),
-              IconButton(
-                icon: Icon(Icons.delete_forever_outlined, color: theme.colorScheme.error),
-                tooltip: 'حذف الفاتورة',
-                onPressed: () => _confirmAndDeleteInvoice(invoice),
-              ),
-            ],
-          ),
-          body: SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Fouad Stock - المخزن', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary, fontFamily: 'Cairo'), textAlign: TextAlign.center),
-                        const SizedBox(height: 8),
-                        Center(child: Text(invoice.type == InvoiceType.sale ? 'فاتورة بيع' : 'فاتورة شراء', style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.secondary, fontFamily: 'Cairo'))),
-                        const Divider(height: 20, thickness: 1),
-                        _buildDetailRow(context, 'رقم الفاتورة', invoice.invoiceNumber),
-                        _buildDetailRow(context, 'تاريخ الفاتورة', _arabicDateFormat.format(invoice.date)),
-                        if (invoice.clientName != null && invoice.clientName!.isNotEmpty)
-                          _buildDetailRow(context, invoice.type == InvoiceType.sale ? 'اسم العميل' : 'اسم المورد', invoice.clientName!),
-                      ],
-                    ),
+                  return;
+                }
+                
+                final result = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(
+                    builder: (context) => EditInvoiceScreen(originalInvoice: _invoice),
                   ),
-                ),
-                const SizedBox(height: 20),
-                Text('الأصناف:', style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.primary, fontFamily: 'Cairo'), textAlign: TextAlign.right),
-                const SizedBox(height: 8),
-                Card(
-                  elevation: 1,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                        columnSpacing: 20,
-                        headingRowColor: WidgetStateColor.resolveWith((states) => theme.colorScheme.primaryContainer.withOpacity(0.3)),
-                        headingTextStyle: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onPrimaryContainer, fontFamily: 'Cairo'),
-                        columns: const [
-                          DataColumn(label: Text('الصنف', textAlign: TextAlign.right)),
-                          DataColumn(label: Text('الكمية', textAlign: TextAlign.center), numeric: true),
-                          DataColumn(label: Text('سعر الوحدة', textAlign: TextAlign.left), numeric: true),
-                          DataColumn(label: Text('الإجمالي الفرعي', textAlign: TextAlign.left), numeric: true),
-                        ],
-                        rows: invoice.items.map((item) => _buildItemRow(context, item)).toList(),
+                );
+
+                if (result == true && mounted) {
+                  _refreshInvoiceDetails();
+                }
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              tooltip: 'تصدير كـ PDF',
+              onPressed: () async {
+                final pdfService = PdfInvoiceService();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('جاري إنشاء ملف PDF...', textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo'))),
+                );
+                await pdfService.shareInvoice(_invoice, context);
+              },
+            ),
+            IconButton(
+              icon: Icon(Icons.delete_forever_outlined, color: theme.colorScheme.error),
+              tooltip: 'حذف الفاتورة',
+              onPressed: () => _confirmAndDeleteInvoice(_invoice),
+            ),
+          ],
+        ),
+        body: _isLoadingDetails
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Fouad Stock - المخزن', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary, fontFamily: 'Cairo'), textAlign: TextAlign.center),
+                            const SizedBox(height: 8),
+                            Center(child: Text(_invoice.type == InvoiceType.sale ? 'فاتورة بيع' : 'فاتورة شراء', style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.secondary, fontFamily: 'Cairo'))),
+                            const Divider(height: 20, thickness: 1),
+                            _buildDetailRow(context, 'رقم الفاتورة', _invoice.invoiceNumber),
+                            _buildDetailRow(context, 'تاريخ الفاتورة', _arabicDateFormat.format(_invoice.date)),
+                            if (_invoice.clientName != null && _invoice.clientName!.isNotEmpty)
+                              _buildDetailRow(context, _invoice.type == InvoiceType.sale ? 'اسم العميل' : 'اسم المورد', _invoice.clientName!),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                          _buildDetailRow(context, 'المجموع الفرعي', NumberFormat.currency(locale: 'ar', symbol: 'ج.م', decimalDigits: 2).format(invoice.subtotal)),
-                          if (invoice.taxRatePercentage > 0 || invoice.taxAmount > 0) ...[
-                            _buildDetailRow(context, 'نسبة الضريبة (%)', '${invoice.taxRatePercentage.toStringAsFixed(invoice.taxRatePercentage.truncateToDouble() == invoice.taxRatePercentage ? 0 : 1)}%'),
-                            _buildDetailRow(context, 'مبلغ الضريبة', NumberFormat.currency(locale: 'ar', symbol: 'ج.م', decimalDigits: 2).format(invoice.taxAmount)),
-                          ],
-                          if (invoice.discountAmount > 0)
-                            _buildDetailRow(context, 'الخصم', NumberFormat.currency(locale: 'ar', symbol: 'ج.م', decimalDigits: 2).format(invoice.discountAmount), valueStyle: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600, color: theme.colorScheme.tertiary, fontFamily: 'Cairo')),
-                          const Divider(thickness: 0.8, height: 15),
-                          _buildDetailRow(context, 'الإجمالي الكلي', NumberFormat.currency(locale: 'ar', symbol: 'ج.م', decimalDigits: 2).format(invoice.grandTotal), valueStyle: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary, fontFamily: 'Cairo')),
-                          const Divider(thickness: 0.8, height: 15, indent: 50, endIndent: 50),
-                          _buildDetailRow(context, 'المبلغ المدفوع', NumberFormat.currency(locale: 'ar', symbol: 'ج.م', decimalDigits: 2).format(invoice.amountPaid), valueStyle: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600, color: Colors.green.shade700, fontFamily: 'Cairo')),
-                          _buildDetailRow(context, 'المبلغ المتبقي', NumberFormat.currency(locale: 'ar', symbol: 'ج.م', decimalDigits: 2).format(invoice.balanceDue), valueStyle: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: invoice.balanceDue > 0.009 ? theme.colorScheme.error : Colors.green.shade700, fontFamily: 'Cairo')),
-                          _buildDetailRow(context, 'حالة الدفع', paymentStatusToString(invoice.paymentStatus), valueStyle: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: currentPaymentStatusColor, fontFamily: 'Cairo')),
-                        ]
-                    )
-                  )
-                ),
-                const SizedBox(height: 10),
-                if (invoice.paymentStatus != PaymentStatus.paid)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10.0),
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.payment_outlined),
-                      label: const Text('تسجيل دفعة', style: TextStyle(fontFamily: 'Cairo')),
-                      onPressed: () => _recordPaymentDialog(invoice),
-                      style: ElevatedButton.styleFrom(backgroundColor: theme.colorScheme.secondary, padding: const EdgeInsets.symmetric(vertical: 12)),
+                    const SizedBox(height: 20),
+                    Text('الأصناف:', style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.primary, fontFamily: 'Cairo'), textAlign: TextAlign.right),
+                    const SizedBox(height: 8),
+                    Card(
+                      elevation: 1,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            columnSpacing: 20,
+                            headingRowColor: WidgetStateColor.resolveWith((states) => theme.colorScheme.primaryContainer.withOpacity(0.3)),
+                            headingTextStyle: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onPrimaryContainer, fontFamily: 'Cairo'),
+                            columns: const [
+                              DataColumn(label: Text('الصنف', textAlign: TextAlign.right)),
+                              DataColumn(label: Text('الكمية', textAlign: TextAlign.center), numeric: true),
+                              DataColumn(label: Text('سعر الوحدة', textAlign: TextAlign.left), numeric: true),
+                              DataColumn(label: Text('الإجمالي الفرعي', textAlign: TextAlign.left), numeric: true),
+                            ],
+                            rows: _invoice.items.map((item) => _buildItemRow(context, item)).toList(),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                if (invoice.notes != null && invoice.notes!.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text('ملاحظات:', style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.primary, fontFamily: 'Cairo'), textAlign: TextAlign.right),
-                  const SizedBox(height: 8),
-                  Card(
-                    elevation: 1, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Text(invoice.notes!, style: theme.textTheme.bodyLarge?.copyWith(fontFamily: 'Cairo'), textAlign: TextAlign.right),
+                    const SizedBox(height: 20),
+                    Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            _buildDetailRow(context, 'المجموع الفرعي', NumberFormat.currency(locale: 'ar', symbol: 'ج.م', decimalDigits: 2).format(_invoice.subtotal)),
+                            if (_invoice.taxRatePercentage > 0 || _invoice.taxAmount > 0) ...[
+                              _buildDetailRow(context, 'نسبة الضريبة (%)', '${_invoice.taxRatePercentage.toStringAsFixed(_invoice.taxRatePercentage.truncateToDouble() == _invoice.taxRatePercentage ? 0 : 1)}%'),
+                              _buildDetailRow(context, 'مبلغ الضريبة', NumberFormat.currency(locale: 'ar', symbol: 'ج.م', decimalDigits: 2).format(_invoice.taxAmount)),
+                            ],
+                            if (_invoice.discountAmount > 0)
+                              _buildDetailRow(context, 'الخصم', NumberFormat.currency(locale: 'ar', symbol: 'ج.م', decimalDigits: 2).format(_invoice.discountAmount), valueStyle: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600, color: theme.colorScheme.tertiary, fontFamily: 'Cairo')),
+                            const Divider(thickness: 0.8, height: 15),
+                            _buildDetailRow(context, 'الإجمالي الكلي', NumberFormat.currency(locale: 'ar', symbol: 'ج.م', decimalDigits: 2).format(_invoice.grandTotal), valueStyle: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary, fontFamily: 'Cairo')),
+                            const Divider(thickness: 0.8, height: 15, indent: 50, endIndent: 50),
+                            _buildDetailRow(context, 'المبلغ المدفوع', NumberFormat.currency(locale: 'ar', symbol: 'ج.م', decimalDigits: 2).format(_invoice.amountPaid), valueStyle: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600, color: Colors.green.shade700, fontFamily: 'Cairo')),
+                            _buildDetailRow(context, 'المبلغ المتبقي', NumberFormat.currency(locale: 'ar', symbol: 'ج.م', decimalDigits: 2).format(_invoice.balanceDue), valueStyle: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: _invoice.balanceDue > 0.009 ? theme.colorScheme.error : Colors.green.shade700, fontFamily: 'Cairo')),
+                            _buildDetailRow(context, 'حالة الدفع', paymentStatusToString(_invoice.paymentStatus), valueStyle: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: currentPaymentStatusColor, fontFamily: 'Cairo')),
+                          ]
+                        )
+                      )
                     ),
-                  ),
-                ],
-                const SizedBox(height: 20),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+                    const SizedBox(height: 10),
+                    if (_invoice.paymentStatus != PaymentStatus.paid)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10.0),
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.payment_outlined),
+                          label: const Text('تسجيل دفعة', style: TextStyle(fontFamily: 'Cairo')),
+                          onPressed: () => _recordPaymentDialog(_invoice),
+                          style: ElevatedButton.styleFrom(backgroundColor: theme.colorScheme.secondary, padding: const EdgeInsets.symmetric(vertical: 12)),
+                        ),
+                      ),
+                    if (_invoice.notes != null && _invoice.notes!.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text('ملاحظات:', style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.primary, fontFamily: 'Cairo'), textAlign: TextAlign.right),
+                      const SizedBox(height: 8),
+                      Card(
+                        elevation: 1, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Text(_invoice.notes!, style: theme.textTheme.bodyLarge?.copyWith(fontFamily: 'Cairo'), textAlign: TextAlign.right),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+      );
   }
 }
 
@@ -389,10 +407,12 @@ String paymentStatusToString(PaymentStatus status) {
 }
 
 Color paymentStatusColor(PaymentStatus status, ThemeData theme) {
-   switch (status) {
+    switch (status) {
     case PaymentStatus.paid: return Colors.green.shade700;
     case PaymentStatus.partiallyPaid: return Colors.orange.shade800;
     case PaymentStatus.unpaid: return theme.colorScheme.error;
     default: return theme.disabledColor;
   }
 }
+
+

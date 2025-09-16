@@ -303,7 +303,7 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Fouad Stock - المخزن', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary, fontFamily: 'Cairo'), textAlign: TextAlign.center),
+                            Text('شركة T & G', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary, fontFamily: 'Cairo'), textAlign: TextAlign.center),
                             const SizedBox(height: 8),
                             Center(child: Text(_invoice.type == InvoiceType.sale ? 'فاتورة بيع' : 'فاتورة شراء', style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.secondary, fontFamily: 'Cairo'))),
                             const Divider(height: 20, thickness: 1),

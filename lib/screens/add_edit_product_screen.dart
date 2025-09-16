@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:fouad_stock/model/product_model.dart';
 import 'package:fouad_stock/model/product_variant_model.dart';
 import 'package:fouad_stock/providers/product_provider.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 // Helper class to manage option controllers in the UI
@@ -35,6 +34,7 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
 
   // Controllers for parent product details
   late TextEditingController _nameController;
+  late TextEditingController _productCodeController;
   late TextEditingController _categoryController;
   late TextEditingController _unitOfMeasureController;
   late TextEditingController _lowStockThresholdController;
@@ -53,6 +53,7 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.product?.name ?? '');
+    _productCodeController = TextEditingController(text: widget.product?.productCode ?? '');
     _categoryController = TextEditingController(text: widget.product?.category ?? '');
     _unitOfMeasureController = TextEditingController(text: widget.product?.unitOfMeasure ?? 'قطعة');
     _lowStockThresholdController = TextEditingController(text: widget.product?.lowStockThreshold?.toString() ?? '');
@@ -115,6 +116,7 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _productCodeController.dispose();
     _categoryController.dispose();
     _unitOfMeasureController.dispose();
     _lowStockThresholdController.dispose();
@@ -222,6 +224,7 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
     final parentProduct = Product(
       id: widget.product?.id,
       name: _nameController.text.trim(),
+      productCode: _productCodeController.text.trim(),
       category: _categoryController.text.trim(),
       unitOfMeasure: _unitOfMeasureController.text.trim(),
       lowStockThreshold: int.tryParse(_lowStockThresholdController.text.trim()),
@@ -238,7 +241,7 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
         await productProvider.updateProduct(parentProduct);
         if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تحديث المنتج بنجاح!'), backgroundColor: Colors.green));
       }
-      if(mounted) Navigator.of(context).pop(true); // <-- CHANGED
+      if(mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل حفظ المنتج: $e'), backgroundColor: Colors.red));
     } finally {
@@ -270,6 +273,12 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
               decoration: const InputDecoration(labelText: 'اسم المنتج*'),
               textAlign: TextAlign.right,
               validator: (value) => (value == null || value.trim().isEmpty) ? 'الاسم مطلوب' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _productCodeController,
+              decoration: const InputDecoration(labelText: 'كود المنتج (اختياري)'),
+              textAlign: TextAlign.right,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -442,7 +451,6 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
     );
   }
 }
-
 
 
 

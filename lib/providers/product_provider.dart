@@ -28,12 +28,9 @@ class ProductProvider with ChangeNotifier {
     fetchProducts();
   }
 
-  // --- REWRITTEN & SIMPLIFIED ---
   Future<void> fetchProducts({ProductListFilter? filter}) async {
     _isLoading = true;
     _currentFilter = filter ?? _currentFilter;
-    // Don't notify here, finally block will handle it.
-
     try {
       _allProducts = await _dbHelper.getAllProductsWithVariants();
       _applyFiltersAndSearch();
@@ -43,11 +40,10 @@ class ProductProvider with ChangeNotifier {
       _displayProducts = [];
     } finally {
       _isLoading = false;
-      notifyListeners(); // Guaranteed notification
+      notifyListeners();
     }
   }
 
-  // --- REWRITTEN & SIMPLIFIED ---
   Future<void> addProduct(Product product) async {
     try {
       _isLoading = true;
@@ -59,20 +55,18 @@ class ProductProvider with ChangeNotifier {
       );
       await _dbHelper.insertProductWithVariants(productToInsert, product.variants);
       
-      // After adding, refresh the master list
       _allProducts = await _dbHelper.getAllProductsWithVariants();
-      _applyFiltersAndSearch(); // Re-apply current view settings
+      _applyFiltersAndSearch();
 
     } catch (e) {
       print("[ProductProvider] Error adding product: $e");
       rethrow;
     } finally {
       _isLoading = false;
-      notifyListeners(); // Guaranteed notification
+      notifyListeners();
     }
   }
 
-  // --- REWRITTEN & SIMPLIFIED ---
   Future<void> updateProduct(Product product) async {
     try {
       _isLoading = true;
@@ -83,20 +77,18 @@ class ProductProvider with ChangeNotifier {
       );
       await _dbHelper.updateProductWithVariants(productToUpdate, product.variants);
 
-      // After updating, refresh the master list
       _allProducts = await _dbHelper.getAllProductsWithVariants();
-      _applyFiltersAndSearch(); // Re-apply current view settings
+      _applyFiltersAndSearch();
 
     } catch (e) {
       print("[ProductProvider] Error updating product: $e");
       rethrow;
     } finally {
       _isLoading = false;
-      notifyListeners(); // Guaranteed notification
+      notifyListeners();
     }
   }
 
-  // --- REWRITTEN & SIMPLIFIED ---
   Future<void> deleteProduct(int id) async {
     try {
       _isLoading = true;
@@ -104,16 +96,15 @@ class ProductProvider with ChangeNotifier {
       
       await _dbHelper.deleteProduct(id);
 
-      // After deleting, refresh the master list
       _allProducts = await _dbHelper.getAllProductsWithVariants();
-      _applyFiltersAndSearch(); // Re-apply current view settings
+      _applyFiltersAndSearch();
 
     } catch (e) {
       print("[ProductProvider] Error deleting product ID $id: $e");
       rethrow;
     } finally {
       _isLoading = false;
-      notifyListeners(); // Guaranteed notification
+      notifyListeners();
     }
   }
 
@@ -145,7 +136,8 @@ class ProductProvider with ChangeNotifier {
         return product.name.toLowerCase().contains(lowerCaseQuery) ||
             (product.productCode?.toLowerCase().contains(lowerCaseQuery) ?? false) ||
             product.category.toLowerCase().contains(lowerCaseQuery) ||
-            product.variants.any((v) => v.barcode?.toLowerCase().contains(lowerCaseQuery) ?? false);
+            product.variants.any((v) => v.barcode?.toLowerCase().contains(lowerCaseQuery) ?? false) ||
+            product.variants.any((v) => v.sku?.toLowerCase().contains(lowerCaseQuery) ?? false);
       }).toList();
     }
   }
@@ -167,19 +159,18 @@ class ProductProvider with ChangeNotifier {
     }
     return null;
   }
-
-  Future<String?> recordUsage(int variantId, int quantityChange, {bool refreshList = true, Transaction? txn}) async {
-    // This logic can be simplified as well, but let's fix the main issue first.
-    // For now, it calls fetchProducts which will work with the rewritten version.
+  
+  Future<String?> recordUsage(int variantId, int quantityChange, {bool refreshList = true}) async {
     try {
       final db = await _dbHelper.database;
       await db.transaction((txn) async {
-        await _dbHelper.updateVariantQuantity(variantId, -quantityChange, txn: txn);
+        // We subtract because "usage" means quantity decreases
+        await _dbHelper.updateVariantQuantity(variantId, -quantityChange.abs(), txn: txn);
       });
       if (refreshList) {
         await fetchProducts(filter: _currentFilter);
       }
-      return null;
+      return null; // Success
     } catch (e) {
       print("[ProductProvider] Error in recordUsage for variant ID $variantId: $e");
       return 'حدث خطأ أثناء تسجيل الصرف: ${e.toString()}';
@@ -193,10 +184,6 @@ class ProductProvider with ChangeNotifier {
   int get expiredProductsCount => _allProducts.where((p) => p.isExpired).length;
   int get nearingExpiryProductsCount => _allProducts.where((p) => p.isNearingExpiry).length;
 }
-
-
-
-
 // // lib/providers/product_provider.dart
 // import 'package:flutter/material.dart';
 // import 'package:sqflite/sqflite.dart'; // For Transaction type

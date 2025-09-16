@@ -73,12 +73,10 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
     super.dispose();
   }
 
-  // <-- CHANGED: This function now waits for a result and refreshes the list
   void _navigateToAddEditProductScreen(BuildContext context, {Product? product}) async {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (ctx) => AddEditProductScreen(product: product)),
     );
-
     if (result == true && mounted) {
       _refreshProducts();
     }
@@ -108,7 +106,7 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
       },
     );
 
-    if (confirmed == true && product.id != null) {
+    if (confirmed == true && product.id != null && mounted) {
       try {
         await Provider.of<ProductProvider>(context, listen: false).deleteProduct(product.id!);
         if (mounted) {
@@ -171,7 +169,7 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
                   final int quantityTaken = int.parse(qtyCtrl.text);
                   final productProvider = Provider.of<ProductProvider>(context, listen: false);
                   
-                  String? result = await productProvider.recordUsage(variant.id!, -quantityTaken);
+                  String? result = await productProvider.recordUsage(variant.id!, quantityTaken);
                   
                   if(context.mounted) {
                     Navigator.of(dialogContext).pop();
@@ -227,10 +225,10 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
         child: Consumer<ProductProvider>(
           builder: (ctx, provider, _) {
             if (provider.isLoading && provider.products.isEmpty) {
-              return Center(child: CircularProgressIndicator());
+              return const Center(child: CircularProgressIndicator());
             }
             if (provider.products.isEmpty) {
-              return Center(child: Text(_isSearching ? 'لا توجد منتجات تطابق بحثك.' : 'لا توجد منتجات. قم بإضافة البعض!', style: TextStyle(fontFamily: 'Cairo')));
+              return Center(child: Text(_isSearching ? 'لا توجد منتجات تطابق بحثك.' : 'لا توجد منتجات. قم بإضافة البعض!', style: const TextStyle(fontFamily: 'Cairo')));
             }
             return ListView.builder(
               padding: const EdgeInsets.all(8.0),
@@ -323,7 +321,6 @@ class ProductParentCard extends StatelessWidget {
     );
   }
 }
-
 
 
 // // lib/screens/products_list_screen.dart

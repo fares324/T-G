@@ -6,6 +6,23 @@ import 'package:fouad_stock/model/invoice_model.dart';
 import '../helpers/db_helpers.dart';
 import 'product_provider.dart';
 
+// Class to hold report data
+class SalesReport {
+  final double totalSales;
+  final double totalCost;
+  final double totalDiscounts;
+  final double netProfit;
+  final int invoiceCount;
+
+  SalesReport({
+    this.totalSales = 0.0,
+    this.totalCost = 0.0,
+    this.totalDiscounts = 0.0,
+    this.netProfit = 0.0,
+    this.invoiceCount = 0,
+  });
+}
+
 class InvoiceProvider with ChangeNotifier {
   List<Invoice> _allFetchedInvoices = [];
   List<Invoice> _invoices = [];
@@ -21,6 +38,39 @@ class InvoiceProvider with ChangeNotifier {
 
   InvoiceProvider() {
     fetchInvoices();
+  }
+  
+  // --- NEW METHOD TO CALCULATE REPORT STATISTICS ---
+  SalesReport generateSalesReport(List<Invoice> invoices) {
+    double totalSales = 0.0;
+    double totalCost = 0.0;
+    double totalDiscounts = 0.0;
+
+    // Loop through each invoice to calculate totals
+    for (final invoice in invoices) {
+      // 1. Add the subtotal (sales before discount) to totalSales
+      totalSales += invoice.subtotal;
+      
+      // 2. Add the discount amount to totalDiscounts
+      totalDiscounts += invoice.discountAmount;
+
+      // 3. Loop through items to calculate the cost of goods for this invoice
+      for (final item in invoice.items) {
+        totalCost += (item.purchasePrice * item.quantity);
+      }
+    }
+
+    // 4. Calculate the final net profit using the correct formula
+    final double netProfit = totalSales - totalCost - totalDiscounts;
+
+    // Return the complete report object
+    return SalesReport(
+      totalSales: totalSales,
+      totalCost: totalCost,
+      totalDiscounts: totalDiscounts,
+      netProfit: netProfit,
+      invoiceCount: invoices.length,
+    );
   }
 
   void _setLoading(bool loading) {
@@ -191,8 +241,6 @@ class InvoiceProvider with ChangeNotifier {
     }
   }
 
-  // --- THIS IS THE FIX ---
-  // A complete rewrite of the updateInvoice method to correctly handle all database operations.
   Future<String?> updateInvoice({
     required Invoice originalInvoice,
     required Invoice updatedInvoiceData,
@@ -201,36 +249,24 @@ class InvoiceProvider with ChangeNotifier {
   }) async {
     _setLoading(true);
     _clearErrorMessage();
-
     final db = await DatabaseHelper.instance.database;
-
     try {
       await db.transaction((txn) async {
-        // 1. Calculate stock changes based on the DIFFERENCE between old and new item lists
-        Map<int, int> stockChanges = {}; // Key: variantId, Value: quantity change
-
-        // Tally original quantities
+        Map<int, int> stockChanges = {};
         for (var item in originalInvoice.items) {
           stockChanges[item.productId] = (stockChanges[item.productId] ?? 0) - item.quantity;
         }
-        
-        // Tally new quantities
         for (var item in updatedInvoiceItems) {
           stockChanges[item.productId] = (stockChanges[item.productId] ?? 0) + item.quantity;
         }
-
-        // 2. Apply stock changes
         for (var entry in stockChanges.entries) {
           int variantId = entry.key;
           int quantityChange = entry.value;
-
           if (quantityChange != 0) {
             int stockAdjustment = (updatedInvoiceData.type == InvoiceType.sale) ? -quantityChange : quantityChange;
             await DatabaseHelper.instance.updateVariantQuantity(variantId, stockAdjustment, txn: txn);
           }
         }
-        
-        // 3. Delete old items and insert new ones
         await txn.delete(DatabaseHelper.tableInvoiceItems, where: '${DatabaseHelper.columnInvoiceIdFk} = ?', whereArgs: [originalInvoice.id!]);
         for (var item in updatedInvoiceItems) {
           final itemMap = item.toMap();
@@ -238,17 +274,14 @@ class InvoiceProvider with ChangeNotifier {
           itemMap['invoiceId'] = originalInvoice.id!;
           await txn.insert(DatabaseHelper.tableInvoiceItems, itemMap);
         }
-        
-        // 4. Update the main invoice record
         await DatabaseHelper.instance.updateInvoiceRecord(updatedInvoiceData, txn: txn);
       });
 
-      // Refresh data in providers
       await productProvider.fetchProducts();
-      await fetchInvoices(); // This will refresh the invoices list and notify listeners
+      await fetchInvoices();
 
       _setLoading(false);
-      return null; // Success
+      return null;
 
     } catch (e) {
       _errorMessage = "فشل تحديث الفاتورة: ${e.toString().replaceFirst("Exception: ", "")}";
@@ -340,8 +373,6 @@ class InvoiceProvider with ChangeNotifier {
     return salesInvoices;
   }
 }
-
-
 
 
 // // lib/providers/invoice_provider.dart

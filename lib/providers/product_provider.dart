@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:fouad_stock/enum/filter_enums.dart';
 import 'package:fouad_stock/model/product_model.dart';
-import 'package:sqflite/sqflite.dart';
 import '../helpers/db_helpers.dart';
 
 class ProductProvider with ChangeNotifier {

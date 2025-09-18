@@ -1,6 +1,5 @@
 // lib/models/product_model.dart
 import 'package:fouad_stock/model/product_variant_model.dart';
-import 'package:flutter/foundation.dart';
 
 class Product {
   int? id;

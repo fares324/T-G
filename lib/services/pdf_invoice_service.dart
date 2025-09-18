@@ -58,6 +58,7 @@ class PdfInvoiceService {
   Future<Uint8List> _generatePdf({required Invoice invoice, required bool isQuote}) async {
     final pdf = pw.Document();
     final DateFormat arabicDateTimeFormat = DateFormat.yMMMd('ar').add_jm();
+    
     final StoreDetails storeDetails = await _settingsService.getStoreDetails();
     
     final fontData = await rootBundle.load("assets/fonts/Cairo-Regular.ttf");
@@ -70,17 +71,39 @@ class PdfInvoiceService {
     final titleTextStyle = pw.TextStyle(font: ttfBold, fontSize: 16);
     final headerTextStyle = pw.TextStyle(font: ttfBold, fontSize: 12);
     
-    // --- NEW: Load the logo image ---
     pw.MemoryImage? logoImage;
-    final String? logoPath = await _settingsService.getStoreLogo();
-    if (logoPath != null && logoPath.isNotEmpty) {
+    if (storeDetails.logoPath != null && storeDetails.logoPath!.isNotEmpty) {
       try {
-        final File logoFile = File(logoPath);
+        final File logoFile = File(storeDetails.logoPath!);
         if (await logoFile.exists()) {
            logoImage = pw.MemoryImage(await logoFile.readAsBytes());
         }
       } catch (e) {
         print("Error loading logo image for PDF: $e");
+      }
+    }
+
+    pw.MemoryImage? instaPayImage;
+    if (storeDetails.instaPayQrPath != null && storeDetails.instaPayQrPath!.isNotEmpty) {
+      try {
+        final File qrFile = File(storeDetails.instaPayQrPath!);
+        if (await qrFile.exists()) {
+           instaPayImage = pw.MemoryImage(await qrFile.readAsBytes());
+        }
+      } catch (e) {
+        print("Error loading InstaPay QR image for PDF: $e");
+      }
+    }
+
+    pw.MemoryImage? walletImage;
+    if (storeDetails.walletQrPath != null && storeDetails.walletQrPath!.isNotEmpty) {
+      try {
+        final File qrFile = File(storeDetails.walletQrPath!);
+        if (await qrFile.exists()) {
+           walletImage = pw.MemoryImage(await qrFile.readAsBytes());
+        }
+      } catch (e) {
+        print("Error loading Wallet QR image for PDF: $e");
       }
     }
     
@@ -91,17 +114,26 @@ class PdfInvoiceService {
         pageFormat: PdfPageFormat.a4,
         build: (pw.Context context) {
           return [
-            _buildHeader(invoice, storeDetails, titleTextStyle, baseTextStyle, logoImage, isQuote: isQuote),
-            pw.SizedBox(height: 20),
+            _buildHeader(
+              invoice,
+              storeDetails,
+              titleTextStyle,
+              baseTextStyle,
+              logoImage,
+              instaPayImage,
+              walletImage,
+              isQuote: isQuote
+            ),
+            pw.SizedBox(height: 15),
             _buildInvoiceDetails(invoice, arabicDateTimeFormat, baseTextStyle, boldTextStyle, isQuote: isQuote),
-            pw.SizedBox(height: 20),
+            pw.SizedBox(height: 15),
             pw.Text('الأصناف:', style: headerTextStyle, textDirection: pw.TextDirection.rtl),
-            pw.SizedBox(height: 8),
+            pw.SizedBox(height: 5),
             _buildItemsTable(invoice, baseTextStyle, boldTextStyle),
-            pw.SizedBox(height: 20),
+            pw.SizedBox(height: 15),
             _buildTotals(invoice, baseTextStyle, boldTextStyle, isQuote: isQuote),
             if (invoice.notes != null && invoice.notes!.isNotEmpty) ...[
-              pw.SizedBox(height: 20),
+              pw.SizedBox(height: 15),
               pw.Text('ملاحظات:', style: headerTextStyle, textDirection: pw.TextDirection.rtl),
               pw.Text(invoice.notes!, style: baseTextStyle, textDirection: pw.TextDirection.rtl),
             ],
@@ -114,25 +146,78 @@ class PdfInvoiceService {
     return pdf.save();
   }
 
-  pw.Widget _buildHeader(Invoice invoice, StoreDetails storeDetails, pw.TextStyle titleStyle, pw.TextStyle baseStyle, pw.MemoryImage? logoImage, {required bool isQuote}) {
+  pw.Widget _buildHeader(
+    Invoice invoice, 
+    StoreDetails storeDetails, 
+    pw.TextStyle titleStyle, 
+    pw.TextStyle baseStyle, 
+    pw.MemoryImage? logoImage,
+    pw.MemoryImage? instaPayImage,
+    pw.MemoryImage? walletImage,
+    {required bool isQuote}
+  ) {
     String documentTitle = isQuote ? 'عرض سعر' : (invoice.type == InvoiceType.sale ? 'فاتورة بيع' : 'فاتورة شراء');
     return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.center,
       children: [
-        // --- NEW: Display the logo if it exists ---
-        if (logoImage != null) ...[
-          pw.Container(
-            height: 80,
-            width: 80,
-            child: pw.Image(logoImage),
-          ),
-          pw.SizedBox(height: 20),
-        ],
-        pw.Text(storeDetails.name, style: titleStyle.copyWith(fontSize: 20, font: titleStyle.font)),
-        pw.Text(storeDetails.address, style: baseStyle, textAlign: pw.TextAlign.center),
-        pw.Text(storeDetails.phone, style: baseStyle),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Expanded(
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  if (logoImage != null)
+                    pw.Container(
+                      height: 80,
+                      width: 80,
+                      child: pw.Image(logoImage),
+                    ),
+                  if (logoImage != null) pw.SizedBox(height: 10),
+                  pw.Text(storeDetails.name, style: titleStyle.copyWith(fontSize: 20)),
+                  pw.SizedBox(height: 5),
+                  pw.Text(storeDetails.address, style: baseStyle),
+                  pw.SizedBox(height: 5),
+                  pw.Text(storeDetails.phone, style: baseStyle),
+                ],
+              ),
+            ),
+            pw.SizedBox(
+              width: 140,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                children: [
+                   if (instaPayImage != null || walletImage != null)
+                    pw.Text('للدفع السريع:', style: baseStyle.copyWith(fontSize: 9)),
+                   pw.SizedBox(height: 5),
+                   pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.center,
+                    children: [
+                      if (instaPayImage != null)
+                        pw.Container(
+                          height: 60,
+                          width: 60,
+                          child: pw.Image(instaPayImage),
+                        ),
+                      if (instaPayImage != null && walletImage != null)
+                        pw.SizedBox(width: 10),
+                      if (walletImage != null)
+                        pw.Container(
+                          height: 60,
+                          width: 60,
+                          child: pw.Image(walletImage),
+                        ),
+                    ]
+                   )
+                ],
+              ),
+            ),
+          ]
+        ),
         pw.SizedBox(height: 20),
-        pw.Text(documentTitle, style: titleStyle),
+        pw.Center(
+          child: pw.Text(documentTitle, style: titleStyle),
+        ),
         pw.SizedBox(height: 5),
       ],
     );
@@ -176,7 +261,8 @@ class PdfInvoiceService {
       border: pw.TableBorder.all(color: PdfColors.grey, width: 0.5),
       headerStyle: boldStyle.copyWith(color: PdfColors.white),
       headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey700),
-      cellStyle: baseStyle,
+      cellStyle: baseStyle.copyWith(fontSize: 9),
+      cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
       cellAlignment: pw.Alignment.centerRight,
       cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.centerLeft, 2: pw.Alignment.center, 3: pw.Alignment.centerRight},
     );
@@ -211,7 +297,7 @@ class PdfInvoiceService {
 
   pw.Widget _buildTotalRow(String title, String value, pw.TextStyle style, {PdfColor? valueColor}) {
     return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 2.0),
+      padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
@@ -235,8 +321,6 @@ class PdfInvoiceService {
     );
   }
 }
-
-
 // // lib/services/pdf_invoice_service.dart
 // import 'dart:typed_data';
 // import 'package:flutter/material.dart';

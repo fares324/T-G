@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:fouad_stock/model/invoice_model.dart';
 import 'package:fouad_stock/providers/invoice_provider.dart';
-import 'package:fouad_stock/providers/product_provider.dart';
 import 'package:fouad_stock/screens/invoice_details_screen.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -196,8 +195,8 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
     }
     setState(() => _isExporting = true);
     try {
-      final String storeName = await _settingsService.getStoreName();
-      var excel = ex.Excel.createExcel();
+final details = await _settingsService.getStoreDetails();
+final String storeName = details.name;      var excel = ex.Excel.createExcel();
       ex.Sheet sheetObject = excel['Sales Report'];
       
       ex.CellStyle titleStyle = ex.CellStyle(bold: true, fontSize: 16, horizontalAlign: ex.HorizontalAlign.Right);
